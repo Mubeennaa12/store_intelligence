@@ -40,8 +40,12 @@ async def get_funnel(store_id: str, db: AsyncSession = Depends(get_db)):
     zone_q = await db.execute(
         select(distinct(EventRow.visitor_id)).where(base, EventRow.event_type == "ZONE_ENTER")
     )
-    zone_visitors = set(r[0] for r in zone_q.fetchall()) & entered_visitors
-    zone_count = len(zone_visitors)
+    zone_visitors_raw = set(r[0] for r in zone_q.fetchall())
+    linked_zone = zone_visitors_raw & entered_visitors
+    if len(linked_zone) > 0 or entered_count == 0:
+        zone_count = len(linked_zone)
+    else:
+        zone_count = min(len(zone_visitors_raw), entered_count)
 
     # Stage 3: unique visitors who reached billing queue
     billing_q = await db.execute(
@@ -49,8 +53,12 @@ async def get_funnel(store_id: str, db: AsyncSession = Depends(get_db)):
             base, EventRow.event_type == "BILLING_QUEUE_JOIN"
         )
     )
-    billing_visitors = set(r[0] for r in billing_q.fetchall()) & entered_visitors
-    billing_count = len(billing_visitors)
+    billing_visitors_raw = set(r[0] for r in billing_q.fetchall())
+    linked_billing = billing_visitors_raw & entered_visitors
+    if len(linked_billing) > 0 or zone_count == 0:
+        billing_count = len(linked_billing)
+    else:
+        billing_count = min(len(billing_visitors_raw), zone_count)
 
     # Stage 4: unique visitors who did NOT abandon (proxy for purchase)
     abandon_q = await db.execute(
@@ -58,9 +66,12 @@ async def get_funnel(store_id: str, db: AsyncSession = Depends(get_db)):
             base, EventRow.event_type == "BILLING_QUEUE_ABANDON"
         )
     )
-    abandoned_visitors = set(r[0] for r in abandon_q.fetchall())
-    purchased_visitors = billing_visitors - abandoned_visitors
-    purchased_count = len(purchased_visitors)
+    abandoned_visitors_raw = set(r[0] for r in abandon_q.fetchall())
+    if len(linked_billing) > 0:
+        purchased_visitors = linked_billing - abandoned_visitors_raw
+        purchased_count = len(purchased_visitors)
+    else:
+        purchased_count = max(0, billing_count - len(abandoned_visitors_raw))
 
     def drop_off(from_count, to_count):
         if from_count == 0:
