@@ -1,0 +1,24 @@
+# Large Datasets and CCTV clips
+data/
+*.mp4
+*.jsonl
+yolov8n.pt
+pipeline/yolov8n.pt
+test_billing_events.jsonl
+pipeline/test_billing_events.jsonl
+
+# Python envs and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+
+# OS/IDE configs
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
