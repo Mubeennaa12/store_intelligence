@@ -45,7 +45,7 @@ async def get_heatmap(store_id: str, db: AsyncSession = Depends(get_db)):
             func.count(distinct(EventRow.visitor_id)).label("visit_count"),
             func.avg(EventRow.dwell_ms).label("avg_dwell_ms"),
         )
-        .where(base, EventRow.event_type.in_(["ZONE_ENTER", "ZONE_DWELL"]))
+        .where(base, EventRow.event_type.in_(["ZONE_ENTER", "ZONE_DWELL", "BILLING_QUEUE_JOIN"]))
         .group_by(EventRow.zone_id)
     )
     rows = visit_q.fetchall()
@@ -53,13 +53,13 @@ async def get_heatmap(store_id: str, db: AsyncSession = Depends(get_db)):
     # Unique sessions for confidence flag
     sessions_q = await db.execute(
         select(func.count(distinct(EventRow.visitor_id))).where(
-            base, EventRow.event_type == "ZONE_ENTER"
+            base, EventRow.event_type.in_(["ZONE_ENTER", "BILLING_QUEUE_JOIN"])
         )
     )
     total_sessions = sessions_q.scalar() or 0
 
     zones = [
-        {"zone_id": r.zone_id, "visit_count": r.visit_count, "avg_dwell_ms": r.avg_dwell_ms or 0}
+        {"zone_id": r.zone_id, "visit_count": r.visit_count, "avg_dwell_ms": float(r.avg_dwell_ms or 0)}
         for r in rows
     ]
 

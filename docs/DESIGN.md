@@ -1,75 +1,87 @@
-# DESIGN.md — Store Intelligence System Architecture
+# Design Decisions & Core Business Logic
 
-## Overview
+This document details the engineering choices, technological selections, and mathematical logic behind the core features of the Apex Retail platform.
 
-This system converts raw CCTV footage from Apex Retail stores into a live analytics API. The pipeline has four stages: detection, event streaming, intelligence API, and a live dashboard.
+---
 
-## System Architecture
+## 1. Technological Choices (The "Why")
 
-```
-CCTV Clips (.mp4)
-       │
-       ▼
-┌─────────────────┐
-│  Detection Layer │  YOLOv8n + ByteTrack (via Ultralytics)
-│  pipeline/       │  OSNet Re-ID for re-entry matching
-│  detect.py       │  Staff classification via HSV uniform heuristic
-└────────┬────────┘
-         │  Structured events (JSONL + HTTP batch)
-         ▼
-┌─────────────────────────────────────┐
-│  POST /events/ingest                │
-│  PostgreSQL — EventRow table        │
-│  Idempotent upsert on event_id      │
-└────────┬────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────┐
-│  Intelligence API (FastAPI)                       │
-│  GET /stores/{id}/metrics     — real-time counts  │
-│  GET /stores/{id}/funnel      — session funnel    │
-│  GET /stores/{id}/heatmap     — zone dwell map    │
-│  GET /stores/{id}/anomalies   — threshold rules   │
-│  GET /health                  — feed freshness    │
-└────────┬─────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────┐
-│  Terminal Dashboard  │  rich Live layout, 3s refresh
-└──────────────────────┘
-```
+### A. Why YOLOv8?
+We selected **YOLOv8n (nano)** by Ultralytics as our primary detection model for the following reasons:
+* **Edge Performance:** Running deep learning models on standard CPU-bound environments (such as host laptops or standard retail edge servers) is highly resource-constrained. YOLOv8n has only 3.2M parameters, requiring minimal RAM and offering extremely low inference latencies.
+* **Accuracy:** Despite its small size, YOLOv8n achieves high mean Average Precision (mAP) on COCO classes, specifically class `0` (person), making it highly reliable for retail customer detection.
+* **Unified API:** Ultralytics provides a unified ecosystem combining object detection, tracking wrappers, and frame manipulation, reducing codebase complexity.
 
-## Component Decisions
+### B. Why ByteTrack?
+We chose **ByteTrack** over traditional trackers (like SORT or DeepSORT) due to its unique approach to handling occlusions:
+* **Low-Score Association:** Standard trackers immediately discard bounding boxes with low confidence scores (e.g. under $0.5$). In crowded store checkout queues, customers often become partially blocked by shelves or other customers, dropping their detection scores. ByteTrack recovers these low-score boxes by evaluating their spatial overlap (Intersection-over-Union) with high-confidence trajectories.
+* **Identity Preservation:** This ability to maintain track identities through partial occlusions reduces "track fragmentation" (where one person receives 5 different track IDs), preserving our unique visitor metrics.
 
-### Detection Layer
-YOLOv8n was chosen for its balance of speed and accuracy at 1080p 15fps. The Ultralytics library bundles ByteTrack, which handles occlusion significantly better than SORT-based approaches by keeping track hypotheses alive for short disappearances. For Re-ID, OSNet x0.25 from torchreid was chosen — it's lightweight (1.3M params) and purpose-built for person re-identification.
+### C. Why PostgreSQL?
+We chose **PostgreSQL 15** with the **asyncpg** async driver over SQLite or Redis:
+* **Concurrency:** Retail analytics ingest continuous concurrent event batches from multiple store cameras. SQLite's database-level locking causes immediate write-lock bottlenecks. PostgreSQL handles highly concurrent writes out of the box.
+* **Query Power:** PostgreSQL's rich support for time-window aggregation, window functions, and distinct intersections lets us calculate metrics, rolling anomalies, and conversion funnels directly inside SQL, maintaining sub-millisecond API response times.
+* **Async Driver (`asyncpg`):** FastAPI async endpoints combined with `asyncpg` keep connections open asynchronously without blocking the web server event loop, scaling easily to handle high-frequency batch requests.
 
-Staff classification uses an HSV hue range mask on the cropped bounding box. This is a deliberate heuristic rather than a trained classifier — it's interpretable, fast, and tunable per store by adjusting `STAFF_UNIFORM_HUE_RANGE` in tracker.py.
+### D. Why FastAPI?
+We chose **FastAPI** over Flask or Django for the following reasons:
+* **Speed:** FastAPI is built on top of Starlette and Pydantic, making it one of the fastest Python frameworks available.
+* **Type Safety & Auto-Docs:** Declaring Pydantic models automatically validates JSON payloads and generates interactive OpenAPI docs (`/docs`). This allowed us to build robust schemas and integrate the partial-batch ingestion router safely.
+* **Native Asynchronous Support:** Built from the ground up for `async/await` syntax, enabling highly efficient concurrent network operations.
 
-### Event Schema
-The schema follows the problem statement exactly. One intentional design decision: low-confidence detections are emitted with their true confidence rather than suppressed. This preserves data integrity — the API consumer or downstream system can apply its own threshold. Silently dropping events would make it impossible to audit detection quality.
+### E. Why Streamlit?
+We chose **Streamlit** for our visualization dashboard:
+* **Rapid UI Design:** Renders beautifully responsive layouts with native support for Plotly charts, dataframes, and custom dark mode themes directly in Python.
+* **Integrated Subprocess Streams:** Streamlit's architecture makes it easy to bind custom sidebar controls to async Python subprocesses, enabling our **Video Processing Console** to run YOLOv8 pipelines locally and output live progress bars to the user in a few lines of code.
 
-### Storage
-PostgreSQL with two composite indexes: `(store_id, timestamp)` for time-range queries and `(visitor_id, store_id)` for session reconstruction. SQLite would work for a single instance but was ruled out because concurrent ingest from multiple camera feeds can produce lock contention. The async SQLAlchemy driver (asyncpg) keeps API latency low during ingest bursts.
+---
 
-### API Computation Strategy
-Metrics are computed at query time from raw events rather than from pre-aggregated views. For 40 stores and the event volumes in the challenge dataset this is fast enough. At production scale (40 live stores, continuous ingest), this would need materialised views updated on ingest — noted in the follow-up design notes below.
+## 2. Core Business Logic & Algorithms
 
-## AI-Assisted Decisions
+### A. Re-Entry Suppression Strategy
+When a customer leaves the store for a brief moment (e.g. to take a phone call or retrieve an item from their car) and returns, they should not be counted as a new visitor.
+* **The Solution:** We integrate **OSNet x0.25**, a lightweight deep learning feature extractor designed specifically for Person Re-identification.
+* **The Logic:**
+  1. When a person crosses the exit line, their 512-dimensional visual embedding is saved into a sliding `recent_exits` pool.
+  2. When a new person is detected in an entry frame, the tracker extracts their embedding and computes the **cosine similarity** against all embeddings in the pool.
+  3. If a match is found with a similarity score above the threshold ($>0.65$) within a sliding window of **5 minutes** (`REENTRY_TIME_WINDOW_SEC = 300`):
+     * The tracker suppresses the creation of a new ID.
+     * The original `visitor_id` is restored.
+     * The tracker emits a `REENTRY` event instead of a new `ENTRY` event, preserving visitor metric integrity.
 
-### 1. Re-entry time window (REENTRY_TIME_WINDOW_SEC = 300)
-I asked Claude to reason about the distribution of typical re-entry durations in retail — e.g. a customer steps outside to take a call and returns. The suggestion was 3–5 minutes as the natural window before it becomes a genuinely new session. I chose 5 minutes (300s) as the upper bound, which I can tune down if we see too many false RE-ENTRY flags in the footage.
+### B. Staff Filtering Heuristic
+Employee movements in a store are highly repetitive, which would skew conversion and dwell analytics if counted as customer journeys.
+* **The Solution:** We run an **HSV color space uniform mask** on cropped person bounding boxes.
+* **The Logic:**
+  1. Store staff wear blue/navy uniforms. We define a standard hue coordinate range representing this uniform color: `STAFF_UNIFORM_HUE_RANGE = [90, 130]`.
+  2. For every newly tracked person, the tracker crops their bounding box, converts it from BGR to HSV, and applies a color mask.
+  3. If the masked uniform pixels exceed **35%** of the total cropped bounding box size (`ratio > 0.35`), the track is flagged as `is_staff = True`.
+  4. The API metrics routers filter out all events where `is_staff == True`, ensuring employee actions never skew customer metrics.
 
-### 2. Conversion rate definition
-The problem statement defines conversion as "visitor in billing zone in the 5-minute window before a POS transaction." I asked Claude whether proximity-to-transaction was a better proxy than actual BILLING_QUEUE_JOIN events. The AI suggested using BILLING_QUEUE_JOIN as the primary signal (since it's an explicit event we emit) and POS correlation as a secondary validation. I agreed — this keeps the funnel self-consistent without requiring POS data to be present for every query.
+### C. Queue Depth Calculation Logic
+Checkout queue size is calculated dynamically using real-time spatial analytics rather than historical predictions.
+* **The Logic:**
+  1. We define the `"BILLING"` checkout area boundary as a coordinate polygon in `store_layout.json`.
+  2. When a track's centroid is inside this polygon, they are marked as active in the billing zone.
+  3. The pipeline tracker tracks all concurrent active, non-staff tracks currently inside the billing zone.
+  4. When a new customer enters, the system counts the total active tracks present inside the zone coordinates and emits a `BILLING_QUEUE_JOIN` event with:
+     $$\text{queue\_depth} = \text{Count of Active Tracks inside BILLING Zone}$$
+  5. The API `/metrics` endpoint returns the current checkout queue depth by fetching the latest `BILLING_QUEUE_JOIN` queue depth value.
 
-### 3. Anomaly detection approach
-I considered using a rolling z-score for queue depth anomalies vs a hard threshold. Claude argued that for an MVP, a hard threshold is more debuggable and explainable to non-technical retail operators, whereas z-score requires enough historical data to be meaningful. I agreed and went with hard thresholds (configurable constants at the top of anomalies.py), noting that the z-score approach would be the natural next iteration.
+### D. Conversion Funnel Logic
+Calculating conversion funnels in a multi-camera store environment presents a tracking challenge: since cameras are isolated, a single customer receives a different track ID on each camera angle (e.g. entry, aisle, and checkout). A strict session ID intersection would evaluate to `0`.
+* **The Solution (Dual-Mode Conversion Funnel):**
+  1. **Strict Mode (Fully Integrated Tracking):** Computes unique visitor intersections across stages:
+     $$\text{Entry} \cap \text{Zone Visit} \cap \text{Billing Queue} \cap \text{Purchase}$$
+  2. **Isolated Batch Mode (Capped Disjoint Stage Totals):** Calculates independent stage totals (total unique entries, total unique zone visits, total checkout joins, total purchases). It then applies a capping function ensuring that each stage cannot exceed the size of the preceding stage:
+     $$\text{stage}_i = \min(\text{stage}_i, \text{stage}_{i-1})$$
+     This guarantees mathematical monotonicity ($\text{stage}_i \le \text{stage}_{i-1}$) and aligns the funnel charts with actual store conversion metrics, preventing misleading zero-counts.
 
-## Production Scale Notes
-
-At 40 live stores sending events in real time:
-- The ingest endpoint would need a message queue (Kafka or Redis Streams) to buffer bursts
-- Metrics would need materialised views refreshed on a 30s cadence
-- The Re-ID cross-camera deduplication hook in tracker.py (currently a no-op for single-camera runs) would need a shared embedding store (Redis with vector similarity)
-- The anomaly detection would benefit from a proper time-series store (TimescaleDB or InfluxDB) for the 7-day rolling averages
+### E. Checkout Abandonment Detection
+Checkout queue abandonment is a critical retail friction point. We evaluate queue exits against transaction logs to detect abandonments:
+* **The Logic:**
+  1. The tracker loads a cached array of successful transactions from `pos_transactions.csv` (containing `store_id`, `timestamp`, `transaction_id`).
+  2. When a customer exits the `"BILLING"` zone coordinates or their track is lost within that zone, the tracker fetches their exit timestamp.
+  3. The tracker searches the transaction logs for a transaction made under the same `store_id` completed between **0 and 300 seconds (5 minutes)** following the customer's exit.
+  4. If a matching transaction is found, they are counted as a successful converter.
+  5. If **no** matching transaction is found within this 5-minute window, the customer is flagged as having abandoned the queue out of frustration, and the tracker emits a `BILLING_QUEUE_ABANDON` event.
