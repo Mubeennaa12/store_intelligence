@@ -84,95 +84,182 @@ clips_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"
 clip_files = glob.glob(os.path.join(clips_dir, "*.mp4"))
 
 if clip_files:
-    clip_names = [os.path.basename(f) for f in clip_files]
+    clip_names = ["[All Store Cameras]"] + [os.path.basename(f) for f in clip_files]
     selected_clip_name = st.sidebar.selectbox("Select Video Clip", options=clip_names)
-    selected_clip_path = os.path.join(clips_dir, selected_clip_name)
-
-    filename_no_ext = os.path.splitext(selected_clip_name)[0]
-    parts = filename_no_ext.split("__")
-    if len(parts) >= 2:
-        clip_store_id = parts[0]
-        clip_camera_id = parts[1]
-    else:
-        clip_store_id = store_id
-        clip_camera_id = "CAM_01"
-
-    st.sidebar.caption(f"**Store ID:** `{clip_store_id}` | **Camera ID:** `{clip_camera_id}`")
 
     frame_skip = st.sidebar.slider(
         "Performance Frame Skip",
         min_value=2,
         max_value=60,
-        value=15,
+        value=30,
         help="Higher skip = dramatically faster CPU processing for demonstrations."
     )
 
-    if st.sidebar.button("🚀 Process Video", use_container_width=True):
-        st.sidebar.markdown("---")
-        progress_bar = st.sidebar.progress(0.0)
-        status_text = st.sidebar.empty()
-
-        pipeline_detect_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pipeline", "detect.py"))
-        layout_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "store_layout.json"))
-        output_jsonl = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "events", f"{filename_no_ext}_events.jsonl"))
-
-        cmd = [
-            sys.executable,
-            pipeline_detect_py,
-            "--clip", selected_clip_path,
-            "--store_id", clip_store_id,
-            "--camera_id", clip_camera_id,
-            "--layout", layout_path,
-            "--output", output_jsonl,
-            "--api_url", API_URL,
-            "--frame_skip", str(frame_skip)
-        ]
-
-        status_text.info("Starting detection pipeline...")
-        start_time = time.time()
+    if selected_clip_name == "[All Store Cameras]":
+        st.sidebar.caption("Processes all 5 CCTV feeds sequentially to build the complete store funnel and heatmap.")
         
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1
-            )
+        if st.sidebar.button("🚀 Process All Cameras", use_container_width=True):
+            st.sidebar.markdown("---")
+            progress_bar = st.sidebar.progress(0.0)
+            status_text = st.sidebar.empty()
             
-            while True:
-                line = proc.stdout.readline()
-                if not line:
-                    break
-                if "Progress:" in line:
-                    try:
-                        pct_part = line.split("Progress:")[1].split("%")[0].strip()
-                        pct = float(pct_part) / 100.0
-                        progress_bar.progress(min(pct, 1.0))
-                        status_text.info(f"Processing: {pct_part}% complete")
-                    except Exception:
-                        pass
-
-            proc.wait()
-            duration = time.time() - start_time
-
-            if proc.returncode == 0:
-                progress_bar.progress(1.0)
-                st.sidebar.success(
-                    f"✅ **Processing Complete!**\n\n"
-                    f"⏱️ **Time:** `{duration:.1f} seconds`"
-                )
-                if clip_store_id == "STORE_BLR_002":
-                    st.session_state["store_id_index"] = 0
+            pipeline_detect_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pipeline", "detect.py"))
+            layout_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "store_layout.json"))
+            
+            start_time = time.time()
+            success = True
+            
+            for idx, clip_path in enumerate(clip_files):
+                clip_name = os.path.basename(clip_path)
+                filename_no_ext = os.path.splitext(clip_name)[0]
+                parts = filename_no_ext.split("__")
+                if len(parts) >= 2:
+                    clip_store_id = parts[0]
+                    clip_camera_id = parts[1]
                 else:
-                    st.session_state["store_id_index"] = 1
+                    clip_store_id = store_id
+                    clip_camera_id = f"CAM_{idx+1}"
+                
+                output_jsonl = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "events", f"{filename_no_ext}_events.jsonl"))
+                
+                status_text.info(f"Processing camera {idx+1}/{len(clip_files)}: `{clip_camera_id}`...")
+                
+                cmd = [
+                    sys.executable,
+                    pipeline_detect_py,
+                    "--clip", clip_path,
+                    "--store_id", clip_store_id,
+                    "--camera_id", clip_camera_id,
+                    "--layout", layout_path,
+                    "--output", output_jsonl,
+                    "--api_url", API_URL,
+                    "--frame_skip", str(frame_skip)
+                ]
+                
+                try:
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        bufsize=1
+                    )
+                    
+                    while True:
+                        line = proc.stdout.readline()
+                        if not line:
+                            break
+                        if "Progress:" in line:
+                            try:
+                                pct_part = line.split("Progress:")[1].split("%")[0].strip()
+                                current_file_pct = float(pct_part) / 100.0
+                                overall_pct = (idx + current_file_pct) / len(clip_files)
+                                progress_bar.progress(min(overall_pct, 1.0))
+                                status_text.info(f"Camera {idx+1}/{len(clip_files)} (`{clip_camera_id}`): {pct_part}% complete")
+                            except Exception:
+                                pass
+                    
+                    proc.wait()
+                    if proc.returncode != 0:
+                        success = False
+                        st.sidebar.error(f"❌ Processing failed for camera `{clip_camera_id}`.")
+                        break
+                except Exception as e:
+                    success = False
+                    st.sidebar.error(f"❌ Error on camera `{clip_camera_id}`: {str(e)}")
+                    break
+            
+            if success:
+                progress_bar.progress(1.0)
+                duration = time.time() - start_time
+                st.sidebar.success(
+                    f"✅ **All 5 Cameras Processed!**\n\n"
+                    f"⏱️ **Total Time:** `{duration:.1f} seconds`"
+                )
+                st.session_state["store_id_index"] = 0
                 st.rerun()
-            else:
-                st.sidebar.error("❌ Pipeline execution failed. See logs.")
-        except Exception as e:
-            st.sidebar.error(f"❌ Error: {str(e)}")
+                
+    else:
+        selected_clip_path = os.path.join(clips_dir, selected_clip_name)
+        filename_no_ext = os.path.splitext(selected_clip_name)[0]
+        parts = filename_no_ext.split("__")
+        if len(parts) >= 2:
+            clip_store_id = parts[0]
+            clip_camera_id = parts[1]
+        else:
+            clip_store_id = store_id
+            clip_camera_id = "CAM_01"
+
+        st.sidebar.caption(f"**Store ID:** `{clip_store_id}` | **Camera ID:** `{clip_camera_id}`")
+
+        if st.sidebar.button("🚀 Process Selected Video", use_container_width=True):
+            st.sidebar.markdown("---")
+            progress_bar = st.sidebar.progress(0.0)
+            status_text = st.sidebar.empty()
+
+            pipeline_detect_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pipeline", "detect.py"))
+            layout_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "store_layout.json"))
+            output_jsonl = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "events", f"{filename_no_ext}_events.jsonl"))
+
+            cmd = [
+                sys.executable,
+                pipeline_detect_py,
+                "--clip", selected_clip_path,
+                "--store_id", clip_store_id,
+                "--camera_id", clip_camera_id,
+                "--layout", layout_path,
+                "--output", output_jsonl,
+                "--api_url", API_URL,
+                "--frame_skip", str(frame_skip)
+            ]
+
+            status_text.info("Starting detection pipeline...")
+            start_time = time.time()
+            
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1
+                )
+                
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    if "Progress:" in line:
+                        try:
+                            pct_part = line.split("Progress:")[1].split("%")[0].strip()
+                            pct = float(pct_part) / 100.0
+                            progress_bar.progress(min(pct, 1.0))
+                            status_text.info(f"Processing: {pct_part}% complete")
+                        except Exception:
+                            pass
+
+                proc.wait()
+                duration = time.time() - start_time
+
+                if proc.returncode == 0:
+                    progress_bar.progress(1.0)
+                    st.sidebar.success(
+                        f"✅ **Processing Complete!**\n\n"
+                        f"⏱️ **Time:** `{duration:.1f} seconds`"
+                    )
+                    if clip_store_id == "STORE_BLR_002":
+                        st.session_state["store_id_index"] = 0
+                    else:
+                        st.session_state["store_id_index"] = 1
+                    st.rerun()
+                else:
+                    st.sidebar.error("❌ Pipeline execution failed. See logs.")
+            except Exception as e:
+                st.sidebar.error(f"❌ Error: {str(e)}")
 else:
     st.sidebar.warning("No clips found in `data/clips/`.")
 
