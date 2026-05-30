@@ -83,6 +83,7 @@ def process_clip(
         clip_start_ts=clip_start_ts,
         transactions_path=transactions_path,
     )
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     emitter = EventEmitter(output_path=output_path, api_url=api_url)
 
     frame_idx = 0
