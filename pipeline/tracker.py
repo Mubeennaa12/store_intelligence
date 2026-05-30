@@ -326,6 +326,10 @@ class MultiObjectTracker:
                     clip_start_ts=self.clip_start_ts,
                 )
                 self.active[track_id] = person
+                
+                # Zone/billing cameras bypass entry thresholds (visitors are already inside)
+                if "ENTRY" not in self.camera_id and "EXIT" not in self.camera_id:
+                    person.entered = True
 
                 if reentry_vis_id:
                     events.append(self._make_event(
