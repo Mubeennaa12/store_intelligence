@@ -62,30 +62,16 @@ Look at the bottom row of the dashboard:
 
 ## 2. Expected Dashboard Visual Outputs
 
-Below are visual screenshots capturing the Apex Retail visual dashboard at various stages of the demo:
+Below are the visual screenshots capturing the Apex Retail visual dashboard in action, exhibiting the fully resolved zone heatmaps, visitor counts, and conversion funnels:
 
-### A. Live Store Analytics & Video Console
-The dashboard provides a highly unified operational layout showing real-time metrics, funnels, heatmaps, and active anomaly desks next to the video processing console.
+### A. Progressive Store Analytics State (6 Visitors)
+This view highlights our system after completing the live YOLOv8 multi-camera tracking. Note the fully populated **Store Zone Heatmap** displaying `SKINCARE`, `BILLING`, and `MOISTURISER` aisle traffic with accurate visit counts and average checkout dwell times:
 
-![Apex Retail Live Store Dashboard Mockup](./images/media__1780155918913.png)
-
----
-
-### B. Conversion Funnel & Popularity Heatmaps
-When all 5 cameras are processed, visitor conversion drops and physical heatmaps are calculated dynamically at query time:
-
-![Store Conversion Funnel and Hotspots](./images/media__1780154871462.png)
+![Apex Retail Live Store Dashboard — 6 Visitors State](./images/media__1780157545739.png)
 
 ---
 
-### C. Active Queue Analytics
-The queue depth tracker dynamically monitors checkout zone counts to count queue bottlenecks:
+### B. Scaled Store Analytics State (9 Visitors)
+This view shows the progressive state of analytics under active visitor scaling, proving that all visual cards, conversion funnels, and gradient styled zone heatmaps scale and synchronize dynamically:
 
-![Live Queue Depth Tracking](./images/media__1780155528386.png)
-
----
-
-### D. Automated Anomaly Warnings
-The operational anomalies router automatically flags queue overflows or dead zone bottlenecks:
-
-![Operational Anomaly Alerter Desk](./images/media__1780155244758.png)
+![Apex Retail Live Store Dashboard — 9 Visitors State](./images/media__1780157857513.png)
