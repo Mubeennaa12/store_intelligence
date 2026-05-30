@@ -29,7 +29,6 @@ log = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 CONFIDENCE_THRESHOLD = 0.35   # emit events even below this — just flag confidence
-FRAME_SKIP = 2                # process every Nth frame for performance
 ENTRY_LINE_RATIO = 0.5        # horizontal line at 50% of frame height = entry threshold
 
 
@@ -64,6 +63,7 @@ def process_clip(
     api_url: str | None,
     clip_start_ts: str | None,
     transactions_path: str | None = None,
+    frame_skip: int = 2,
 ):
     zone_map = build_zone_map(layout, store_id)
     cap = cv2.VideoCapture(clip_path)
@@ -92,7 +92,7 @@ def process_clip(
             break
 
         frame_idx += 1
-        if frame_idx % FRAME_SKIP != 0:
+        if frame_idx % frame_skip != 0:
             continue
 
         events = tracker.process_frame(frame, frame_idx)
@@ -126,6 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--api_url", default=None)
     parser.add_argument("--clip_start_ts", default=None, help="ISO-8601 UTC start time of clip")
     parser.add_argument("--transactions", default=None, help="Path to POS transactions CSV")
+    parser.add_argument("--frame_skip", type=int, default=2, help="Process every Nth frame")
     args = parser.parse_args()
 
     layout = load_layout(args.layout)
@@ -138,4 +139,5 @@ if __name__ == "__main__":
         api_url=args.api_url,
         clip_start_ts=args.clip_start_ts,
         transactions_path=args.transactions,
+        frame_skip=args.frame_skip,
     )
