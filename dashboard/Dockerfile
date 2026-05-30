@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /dashboard
-RUN pip install --no-cache-dir rich httpx
+RUN pip install --no-cache-dir streamlit pandas plotly httpx
 COPY . .
-CMD ["python", "live.py", "--api_url", "http://api:8000", "--store_id", "STORE_BLR_002"]
+EXPOSE 3000
+CMD ["streamlit", "run", "app.py", "--server.port", "3000", "--server.address", "0.0.0.0"]
