@@ -58,7 +58,7 @@ class StoreEvent(BaseModel):
 
 
 class IngestRequest(BaseModel):
-    events: list[StoreEvent] = Field(..., max_length=500)
+    events: list[dict] = Field(..., max_length=500)
 
 
 class IngestResponse(BaseModel):

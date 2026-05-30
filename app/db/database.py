@@ -13,7 +13,7 @@ import uuid
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://apex:apex_secret@localhost:5432/store_intelligence",
+    "postgresql+asyncpg://postgres:apex@localhost:5432/store_intelligence",
 )
 
 # asyncpg driver

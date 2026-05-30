@@ -22,7 +22,15 @@ async def ingest_events(payload: IngestRequest, db: AsyncSession = Depends(get_d
     duplicate = 0
     errors = []
 
-    for evt in payload.events:
+    for raw_evt in payload.events:
+        try:
+            evt = StoreEvent(**raw_evt)
+        except Exception as e:
+            rejected += 1
+            errors.append({"event_id": str(raw_evt.get("event_id", "unknown")), "error": str(e)})
+            logger.warning("event_rejected", event_id=str(raw_evt.get("event_id", "unknown")), error=str(e))
+            continue
+
         try:
             # Upsert — do nothing on conflict (idempotent)
             stmt = (

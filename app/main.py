@@ -19,8 +19,7 @@ from routers import events, metrics, funnel, heatmap, anomalies, health
 # ---------------------------------------------------------------------------
 structlog.configure(
     processors=[
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
+        structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
     ]
