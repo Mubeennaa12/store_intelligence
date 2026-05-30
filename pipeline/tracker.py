@@ -195,7 +195,7 @@ class MultiObjectTracker:
             lo_hue, hi_hue = STAFF_UNIFORM_HUE_RANGE
             mask = cv2.inRange(hsv, (lo_hue, 50, 50), (hi_hue, 255, 255))
             ratio = np.count_nonzero(mask) / mask.size
-            return ratio > 0.35   # >35% of crop is staff-uniform color
+            return bool(ratio > 0.35)   # >35% of crop is staff-uniform color
         except Exception:
             return False
 
