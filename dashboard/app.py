@@ -51,17 +51,16 @@ st.sidebar.markdown("Real-time CCTV Analytics Console")
 if "store_id_index" not in st.session_state:
     st.session_state["store_id_index"] = 0
 
+store_options = ["STORE_BLR_002", "ST1076", "ST1008", "STORE_EMPTY_999"]
 store_id = st.sidebar.selectbox(
     "Select Store",
-    options=["STORE_BLR_002", "STORE_EMPTY_999"],
-    index=st.session_state["store_id_index"]
+    options=store_options,
+    index=min(st.session_state["store_id_index"], len(store_options) - 1)
 )
 
 # Sync back session state on selection
-if store_id == "STORE_BLR_002":
-    st.session_state["store_id_index"] = 0
-else:
-    st.session_state["store_id_index"] = 1
+if store_id in store_options:
+    st.session_state["store_id_index"] = store_options.index(store_id)
 
 refresh_rate = st.sidebar.slider(
     "Refresh Interval (seconds)",
@@ -80,8 +79,15 @@ import sys
 import glob
 import subprocess
 
-clips_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "clips"))
-clip_files = glob.glob(os.path.join(clips_dir, "*.mp4"))
+# Map store_id to correct directory for clips
+if store_id == "ST1076":
+    clips_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "Store 1"))
+elif store_id == "ST1008":
+    clips_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "Store 2"))
+else:
+    clips_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "clips"))
+
+clip_files = sorted(glob.glob(os.path.join(clips_dir, "*.mp4")))
 
 if clip_files:
     clip_names = ["[All Store Cameras]"] + [os.path.basename(f) for f in clip_files]
@@ -118,9 +124,15 @@ if clip_files:
                     clip_camera_id = parts[1]
                 else:
                     clip_store_id = store_id
-                    clip_camera_id = f"CAM_{idx+1}"
+                    import re
+                    match = re.search(r'cam\s*(\d+)', filename_no_ext, re.IGNORECASE)
+                    if match:
+                        clip_camera_id = f"CAM{match.group(1)}"
+                    else:
+                        clip_camera_id = filename_no_ext.replace(" ", "_").upper()
                 
                 output_jsonl = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "events", f"{filename_no_ext}_events.jsonl"))
+                transactions_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "pos_transactions.csv"))
                 
                 status_text.info(f"Processing camera {idx+1}/{len(clip_files)}: `{clip_camera_id}`...")
                 
@@ -135,6 +147,8 @@ if clip_files:
                     "--api_url", API_URL,
                     "--frame_skip", str(frame_skip)
                 ]
+                if os.path.exists(transactions_path):
+                    cmd += ["--transactions", transactions_path]
                 
                 try:
                     proc = subprocess.Popen(
@@ -190,7 +204,12 @@ if clip_files:
             clip_camera_id = parts[1]
         else:
             clip_store_id = store_id
-            clip_camera_id = "CAM_01"
+            import re
+            match = re.search(r'cam\s*(\d+)', filename_no_ext, re.IGNORECASE)
+            if match:
+                clip_camera_id = f"CAM{match.group(1)}"
+            else:
+                clip_camera_id = filename_no_ext.replace(" ", "_").upper()
 
         st.sidebar.caption(f"**Store ID:** `{clip_store_id}` | **Camera ID:** `{clip_camera_id}`")
 
@@ -202,6 +221,7 @@ if clip_files:
             pipeline_detect_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pipeline", "detect.py"))
             layout_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "store_layout.json"))
             output_jsonl = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "events", f"{filename_no_ext}_events.jsonl"))
+            transactions_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "pos_transactions.csv"))
 
             cmd = [
                 sys.executable,
@@ -214,6 +234,8 @@ if clip_files:
                 "--api_url", API_URL,
                 "--frame_skip", str(frame_skip)
             ]
+            if os.path.exists(transactions_path):
+                cmd += ["--transactions", transactions_path]
 
             status_text.info("Starting detection pipeline...")
             start_time = time.time()

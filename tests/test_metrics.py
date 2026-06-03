@@ -78,6 +78,50 @@ class TestIngest:
         assert body["accepted"] >= 1
         assert body["rejected"] >= 0  # bad event counted
 
+    @pytest.mark.asyncio
+    async def test_ingest_accepts_new_format_events(self):
+        new_events = [
+            {
+                "event_type": "entry",
+                "id_token": "ID_TEST_60001",
+                "store_code": "store_1076",
+                "camera_id": "cam1",
+                "event_timestamp": "2026-03-08T18:10:05.120000",
+                "is_staff": False,
+                "gender_pred": "F",
+                "age_pred": 28,
+                "age_bucket": "25-34",
+                "is_face_hidden": False,
+                "group_id": None,
+                "group_size": None
+            },
+            {
+                "event_type": "zone_entered",
+                "track_id": 999,
+                "store_id": "ST1076",
+                "camera_id": "CAM2",
+                "zone_id": "PURPLLE_MUM_1076_Z01",
+                "zone_name": "Left Shelf",
+                "zone_type": "SHELF",
+                "is_revenue_zone": "Yes",
+                "event_time": "2026-03-08T18:10:45.280000",
+                "zone_hotspot_x": 412.6,
+                "zone_hotspot_y": 238.4,
+                "gender": "F",
+                "age": 28,
+                "age_bucket": "25-34"
+            }
+        ]
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.post("/events/ingest", json={"events": new_events})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["accepted"] == 2
+        assert body["rejected"] == 0
+
+
+
+
 
 @pytest.mark.skipif(not APP_AVAILABLE, reason="App not available in this environment")
 class TestMetrics:

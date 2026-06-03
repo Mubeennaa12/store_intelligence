@@ -1,0 +1,79 @@
+{
+  "stores": [
+    {
+      "store_id": "STORE_BLR_002",
+      "store_name": "Apex Retail - Bengaluru",
+      "open_hours": "09:00-22:00",
+      "zones": [
+        {
+          "zone_id": "SKINCARE",
+          "sku_zone": "SKINCARE",
+          "camera_id": "CAM_SKINCARE_01",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        },
+        {
+          "zone_id": "MOISTURISER",
+          "sku_zone": "MOISTURISER",
+          "camera_id": "CAM_MOISTURISER_01",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        },
+        {
+          "zone_id": "BILLING",
+          "sku_zone": "BILLING",
+          "camera_id": "CAM_BILLING_01",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        }
+      ]
+    },
+    {
+      "store_id": "ST1076",
+      "store_name": "Purplle Store 1",
+      "open_hours": "10:00-21:30",
+      "zones": [
+        {
+          "zone_id": "PURPLLE_MUM_1076_Z01",
+          "sku_zone": "SHELF_1",
+          "camera_id": "CAM2",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        },
+        {
+          "zone_id": "PURPLLE_MUM_1076_Z02",
+          "sku_zone": "SHELF_2",
+          "camera_id": "CAM3",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        },
+        {
+          "zone_id": "PURPLLE_MUM_1076_Z03",
+          "sku_zone": "SHELF_3",
+          "camera_id": "CAM4",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        },
+        {
+          "zone_id": "PURPLLE_MUM_1076_Z_BILLING_01",
+          "sku_zone": "BILLING",
+          "camera_id": "PURPLLE_MUM_1076_CAM6",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        }
+      ]
+    },
+    {
+      "store_id": "ST1008",
+      "store_name": "Purplle Store 2",
+      "open_hours": "10:00-21:30",
+      "zones": [
+        {
+          "zone_id": "ST1008_Z01",
+          "sku_zone": "SHELF_1",
+          "camera_id": "CAM2",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        },
+        {
+          "zone_id": "ST1008_Z_BILLING_01",
+          "sku_zone": "BILLING",
+          "camera_id": "CAM5",
+          "bbox": [0.0, 0.0, 1.0, 1.0]
+        }
+      ]
+    }
+  ]
+}

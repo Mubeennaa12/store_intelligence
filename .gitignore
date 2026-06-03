@@ -1,7 +1,9 @@
 # Large Datasets and CCTV clips
-data/
+data/*
+!data/store_layout.json
 *.mp4
 *.jsonl
+!samples/**/*.jsonl
 yolov8n.pt
 pipeline/yolov8n.pt
 test_billing_events.jsonl
@@ -16,9 +18,12 @@ __pycache__/
 venv/
 env/
 .env
+.coverage
+*.zip
 
 # OS/IDE configs
 .idea/
 .vscode/
 Thumbs.db
 Desktop.ini
+

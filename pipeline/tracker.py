@@ -147,6 +147,7 @@ class MultiObjectTracker:
         if not path:
             return
         import os, csv
+        from datetime import timezone
         if not os.path.exists(path):
             log.warning(f"Transactions file not found at {path} — proceeding in graceful fallback mode")
             return
@@ -154,11 +155,43 @@ class MultiObjectTracker:
             with open(path, mode="r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
+                    # Support both old and new CSV schemas
+                    if "transaction_id" in row:
+                        tx_id = row["transaction_id"]
+                    elif "order_id" in row:
+                        tx_id = row["order_id"]
+                    else:
+                        tx_id = "unknown"
+
+                    if "timestamp" in row:
+                        ts = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                    elif "order_date" in row and "order_time" in row:
+                        dt_str = f"{row['order_date']} {row['order_time']}"
+                        try:
+                            # dd-mm-yyyy hh:mm:ss format
+                            ts = datetime.strptime(dt_str, "%d-%m-%Y %H:%M:%S").replace(tzinfo=timezone.utc)
+                        except ValueError:
+                            try:
+                                ts = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                            except ValueError:
+                                ts = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
+                    else:
+                        ts = datetime.now(timezone.utc)
+
+                    if "basket_value_inr" in row:
+                        val = float(row["basket_value_inr"] or 0)
+                    elif "total_amount" in row:
+                        val = float(row["total_amount"] or 0)
+                    else:
+                        val = 0.0
+
+                    store_id = row.get("store_id") or "unknown"
+
                     self.transactions.append({
-                        "store_id": row["store_id"],
-                        "transaction_id": row["transaction_id"],
-                        "timestamp": datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")),
-                        "basket_value_inr": float(row["basket_value_inr"]),
+                        "store_id": store_id,
+                        "transaction_id": tx_id,
+                        "timestamp": ts,
+                        "basket_value_inr": val,
                     })
             log.info(f"Loaded {len(self.transactions)} POS transactions")
         except Exception as e:
